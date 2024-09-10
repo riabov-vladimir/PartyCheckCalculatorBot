@@ -1,6 +1,8 @@
 import sqlite3
 import itertools
 import telebot
+from telebot import types
+
 import secret
 from faq_text import faq_text
 
@@ -19,7 +21,8 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS expenses (
                                                             expense_id INTEGER PRIMARY KEY AUTOINCREMENT, 
                                                             chat_id INTEGER NOT NULL, 
-                                                            user_id INTEGER NOT NULL, 
+                                                            user_id INTEGER NOT NULL,
+                                                            username TEXT, 
                                                             amount REAL NOT NULL, 
                                                             description TEXT NOT NULL,
                                                             exclude INTEGER DEFAULT 0 NOT NULL,
@@ -28,10 +31,35 @@ def init_db():
     conn.close()
 
 
+# @bot.message_handler(commands=['start'])
+# def start(message):
+#     bot.send_message(message.chat.id, 'Здрасьте! Я пришел вам помочь с бухгалтерией.\nКто будет '
+#                                       'скидываться - ОБЯЗАТЕЛЬНО жмите /participate')
+
+
 @bot.message_handler(commands=['start'])
-def start(message):
+def send_welcome(message):
+    # Создаем inline-кнопку
+    markup = types.InlineKeyboardMarkup()
+    button = types.InlineKeyboardButton("🍻 Я в деле!", callback_data='participate')
+    markup.add(button)
+
+    # Отправляем приветственное сообщение с кнопкой
     bot.send_message(message.chat.id, 'Здрасьте! Я пришел вам помочь с бухгалтерией.\nКто будет '
-                                      'скидываться - ОБЯЗАТЕЛЬНО жмите /participate')
+                                      'скидываться - ОБЯЗАТЕЛЬНО жмите "🍻 Я в деле!"', reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'participate')
+def handle_participate(call):
+    username = call.from_user.username
+    conn = sqlite3.connect('expenses.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO expenses (chat_id, user_id, username, amount, description) VALUES (?, ?, ?, ?, ?)",
+                   (call.message.chat.id, call.from_user.id, call.from_user.username, 0, f'{call.from_user.username} added via callback'))
+    conn.commit()
+    conn.close()
+    # bot.send_message(message.chat.id, f'@{username}, понял принял!')
+    bot.send_message(call.message.chat.id, f'@{username}, понял принял!')
 
 
 @bot.message_handler(commands=['participate'])
@@ -39,8 +67,8 @@ def participate(message):
     username = message.from_user.username
     conn = sqlite3.connect('expenses.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO expenses (chat_id, user_id, amount, description) VALUES (?, ?, ?, ?)",
-                   (message.chat.id, message.from_user.id, 0, f'{message.from_user.username} added'))
+    cursor.execute("INSERT INTO expenses (chat_id, user_id, username, amount, description) VALUES (?, ?, ?, ?, ?)",
+                   (message.chat.id, message.from_user.id, message.from_user.username, 0, f'{message.from_user.username} added'))
     conn.commit()
     conn.close()
     bot.send_message(message.chat.id, f'@{username}, понял принял!')
@@ -190,8 +218,8 @@ def handle_message(message):
             # Сохранение расхода в базе данных
             conn = sqlite3.connect('expenses.db')
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO expenses (chat_id, user_id, amount, description) VALUES (?, ?, ?, ?)",
-                           (message.chat.id, user_id, amount, description))
+            cursor.execute("INSERT INTO expenses (chat_id, user_id, amount, description) VALUES (?, ?, ?, ?, ?)",
+                           (message.chat.id, user_id, message.chat.username, amount, description))
             conn.commit()
             conn.close()
 
