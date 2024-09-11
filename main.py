@@ -44,7 +44,7 @@ def send_welcome(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'participate')
-def handle_participate(call):
+def inline_participate(call):
     username = call.from_user.username
     conn = sqlite3.connect('expenses.db')
     cursor = conn.cursor()
@@ -66,6 +66,51 @@ def participate(message):
     conn.commit()
     conn.close()
     bot.send_message(message.chat.id, f'@{username}, понял принял!')
+
+
+@bot.message_handler(commands=['drop_expenses'])
+def drop_expenses(message):
+    username = message.from_user.username
+    conn = sqlite3.connect('expenses.db')
+    cursor = conn.cursor()
+
+    cursor.execute("""
+         SELECT
+             SUM(amount) as total_amount
+         FROM expenses
+         WHERE chat_id = @chat_id
+         """, (message.chat.id,))
+    total_amount = cursor.fetchone()
+
+    cursor.execute("""
+         SELECT
+             AVG(amount) as average_amount
+         FROM expenses
+         WHERE chat_id = @chat_id
+         """, (message.chat.id,))
+    average_amount = cursor.fetchone()
+
+    text = (f'Ну что, все живы здоровы? Надеюсь вы хорошо провели время)\n\nПо итогу гульнули на {round(total_amount[0])}₽, это по {round(average_amount[0])}₽ с носа.\n\n'
+            f'Итого по расходам:\n\n')
+
+    cursor.execute("""
+        SELECT amount, username, description FROM expenses WHERE chat_id = @chat_id AND amount > 0
+                        """, (message.chat.id, ))
+    results = cursor.fetchall()
+
+    i = 1
+    for amount, username, description in results:
+        text += f'{i}. {round(amount)}₽ от @{username} ({description})\n\n'
+        i += 1
+
+    text += '\n\nНа этом извольте откланяться! Всем пока и до новых встреч 👋'
+
+    cursor.execute("""
+        DELETE FROM expenses WHERE chat_id = @chat_id
+    """, (message.chat.id, ))
+    conn.commit()
+    conn.close()
+    bot.send_message(message.chat.id, text)
 
 
 @bot.message_handler(commands=['list_expenses'])
@@ -96,7 +141,7 @@ def participate(message):
         SELECT amount, username, description FROM expenses WHERE chat_id = @chat_id AND amount > 0
                         """, (message.chat.id, ))
     results = cursor.fetchall()
-    print(results)
+
     i = 1
     for amount, username, description in results:
         text += f'{i}. {round(amount)}₽ от @{username} ({description})\n\n'
