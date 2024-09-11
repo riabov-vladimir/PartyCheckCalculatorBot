@@ -68,6 +68,44 @@ def participate(message):
     bot.send_message(message.chat.id, f'@{username}, понял принял!')
 
 
+@bot.message_handler(commands=['list_expenses'])
+def participate(message):
+    conn = sqlite3.connect('expenses.db')
+    cursor = conn.cursor()
+
+    cursor.execute("""
+         SELECT
+             SUM(amount) as total_amount
+         FROM expenses
+         WHERE chat_id = @chat_id
+         """, (message.chat.id,))
+    total_amount = cursor.fetchone()
+
+    cursor.execute("""
+         SELECT
+             AVG(amount) as average_amount
+         FROM expenses
+         WHERE chat_id = @chat_id
+         """, (message.chat.id,))
+    average_amount = cursor.fetchone()
+
+    text = (f'По {round(average_amount[0])}₽ с человека. Общая сумма - {round(total_amount[0])}₽\n\n'
+            f'Список рарсходов на данный момент:\n\n')
+
+    cursor.execute("""
+        SELECT amount, username, description FROM expenses WHERE chat_id = @chat_id AND amount > 0
+                        """, (message.chat.id, ))
+    results = cursor.fetchall()
+    print(results)
+    i = 1
+    for amount, username, description in results:
+        text += f'{i}. {round(amount)}₽ от @{username} ({description})\n\n'
+        i += 1
+
+    bot.send_message(message.chat.id, text)
+
+    conn.close()
+
 @bot.message_handler(commands=['help'])
 def help(message):
     bot.send_message(message.chat.id, faq_text, parse_mode='MarkdownV2')
@@ -165,12 +203,12 @@ def summary(message):
 
         for debtor, creditor in itertools.groupby(results_sorted, key=keyfunc):
 
-            summary_text += f'{debtor} скинь:\n'
+            summary_text += f'🔻 @{debtor} скинь:\n'
 
             order_action = sorted(creditor, key=lambda x: x[2])
 
             for _, creditor, amount in order_action:
-                summary_text += f'    💰 {creditor} {round(amount)}₽\n'
+                summary_text += f'    💰 @{creditor} {round(amount)}₽\n'
 
         conn = sqlite3.connect('expenses.db')
         cursor = conn.cursor()
