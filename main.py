@@ -31,12 +31,6 @@ def init_db():
     conn.close()
 
 
-# @bot.message_handler(commands=['start'])
-# def start(message):
-#     bot.send_message(message.chat.id, 'Здрасьте! Я пришел вам помочь с бухгалтерией.\nКто будет '
-#                                       'скидываться - ОБЯЗАТЕЛЬНО жмите /participate')
-
-
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     # Создаем inline-кнопку
@@ -45,8 +39,8 @@ def send_welcome(message):
     markup.add(button)
 
     # Отправляем приветственное сообщение с кнопкой
-    bot.send_message(message.chat.id, 'Здрасьте! Я пришел вам помочь с бухгалтерией.\nКто будет '
-                                      'скидываться - ОБЯЗАТЕЛЬНО жмите "🍻 Я в деле!"', reply_markup=markup)
+    bot.send_message(message.chat.id, 'Здрасьте! Я пришел помочь вам с бухгалтерией.\nКто будет '
+                                      'скидываться - ОБЯЗАТЕЛЬНО жмите "🍻 Я в деле!" под этим сообщением, либо в меню бота!', reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'participate')
@@ -98,53 +92,66 @@ def summary(message):
     cursor.execute("""
         WITH TotalExpenses AS (
             SELECT 
-                chat_id,
-                SUM(amount) AS total_amount,
-                COUNT(DISTINCT user_id) AS user_count
+                SUM(amount) AS total_amount
             FROM 
                 expenses
             WHERE 
                 chat_id = @chat_id
-            GROUP BY 
-                chat_id
         ),
         UserExpenses AS (
             SELECT 
-                chat_id,
-                user_id,
+                username,
                 SUM(amount) AS user_total
             FROM 
                 expenses
             WHERE 
                 chat_id = @chat_id
             GROUP BY 
-                chat_id, user_id
+                username
         ),
         UserBalances AS (
             SELECT 
-                ue.chat_id,
-                ue.user_id,
+                ue.username,
                 ue.user_total,
-                te.total_amount / te.user_count AS share,
-                (ue.user_total - (te.total_amount / te.user_count)) AS balance
+                (te.total_amount / (SELECT COUNT(*) FROM UserExpenses)) AS share,
+                (ue.user_total - (te.total_amount / (SELECT COUNT(*) FROM UserExpenses))) AS balance
             FROM 
-                UserExpenses ue
-            JOIN 
-                TotalExpenses te ON ue.chat_id = te.chat_id
+                UserExpenses ue,
+                TotalExpenses te
+        ),
+        Debtors AS (
+            SELECT 
+                username,
+                ABS(balance) AS debt
+            FROM 
+                UserBalances
+            WHERE 
+                balance < 0
+        ),
+        Creditors AS (
+            SELECT 
+                username,
+                user_total - (SELECT total_amount / (SELECT COUNT(*) FROM UserExpenses) FROM TotalExpenses) AS net_contribution
+            FROM 
+                UserBalances
+            WHERE 
+                balance > 0
+        ),
+        TotalDebt AS (
+            SELECT 
+                SUM(debt) AS total_debt
+            FROM 
+                Debtors
         )
         
         SELECT 
-            ub1.user_id AS debtor,
-            ub2.user_id AS creditor,
-            ABS(ub1.balance) AS amount
+            d.username AS debtor,
+            c.username AS creditor,
+            (d.debt * (c.net_contribution / (SELECT SUM(net_contribution) FROM Creditors))) AS amount_to_pay
         FROM 
-            UserBalances ub1
-        JOIN 
-            UserBalances ub2 ON ub1.chat_id = ub2.chat_id
-        WHERE 
-            ub1.balance < 0 AND ub2.balance > 0
-            AND ABS(ub1.balance) <= ub2.balance;
-
+            Debtors d
+        CROSS JOIN 
+            Creditors c;
     """, (chat_id,))
     results = cursor.fetchall()
     print(results)
@@ -158,12 +165,12 @@ def summary(message):
 
         for debtor, creditor in itertools.groupby(results_sorted, key=keyfunc):
 
-            summary_text += f'{debtor} должен:\n'
+            summary_text += f'{debtor} скинь:\n'
 
             order_action = sorted(creditor, key=lambda x: x[2])
 
             for _, creditor, amount in order_action:
-                summary_text += f'-- {creditor} {amount}₽\n'
+                summary_text += f'    💰 {creditor} {round(amount)}₽\n'
 
         conn = sqlite3.connect('expenses.db')
         cursor = conn.cursor()
@@ -184,7 +191,7 @@ def summary(message):
             """, (chat_id,))
         average_amount = cursor.fetchone()
 
-        summary_text += f'\nПо итогу гульнули на {total_amount[0]}₽\nИли по {average_amount[0]}₽ с человека'
+        summary_text += f'\nПо итогу гульнули на {round(total_amount[0])}₽\nИли по {round(average_amount[0])}₽ с человека'
 
     else:
         summary_text = "Нет зарегистрированных расходов."
