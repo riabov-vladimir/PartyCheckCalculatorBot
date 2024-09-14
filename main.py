@@ -40,7 +40,8 @@ def send_welcome(message):
 
     # Отправляем приветственное сообщение с кнопкой
     bot.send_message(message.chat.id, 'Здрасьте! Я пришел помочь вам с бухгалтерией.\nКто будет '
-                                      'скидываться - ОБЯЗАТЕЛЬНО жмите "🍻 Я в деле!" под этим сообщением, либо в меню бота!', reply_markup=markup)
+                                      'скидываться - ОБЯЗАТЕЛЬНО жмите "🍻 Я в деле!" под этим сообщением, либо в '
+                                      'меню бота!', reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'participate')
@@ -49,7 +50,8 @@ def inline_participate(call):
     conn = sqlite3.connect('expenses.db')
     cursor = conn.cursor()
     cursor.execute("INSERT INTO expenses (chat_id, user_id, username, amount, description) VALUES (?, ?, ?, ?, ?)",
-                   (call.message.chat.id, call.from_user.id, call.from_user.username, 0, f'{call.from_user.username} added via callback'))
+                   (call.message.chat.id, call.from_user.id, call.from_user.username, 0,
+                    f'{call.from_user.username} added via callback'))
     conn.commit()
     conn.close()
     # bot.send_message(message.chat.id, f'@{username}, понял принял!')
@@ -62,7 +64,8 @@ def participate(message):
     conn = sqlite3.connect('expenses.db')
     cursor = conn.cursor()
     cursor.execute("INSERT INTO expenses (chat_id, user_id, username, amount, description) VALUES (?, ?, ?, ?, ?)",
-                   (message.chat.id, message.from_user.id, message.from_user.username, 0, f'{message.from_user.username} added'))
+                   (message.chat.id, message.from_user.id, message.from_user.username, 0,
+                    f'{message.from_user.username} added'))
     conn.commit()
     conn.close()
     bot.send_message(message.chat.id, f'@{username}, понял принял!')
@@ -70,7 +73,6 @@ def participate(message):
 
 @bot.message_handler(commands=['drop_expenses'])
 def drop_expenses(message):
-    username = message.from_user.username
     conn = sqlite3.connect('expenses.db')
     cursor = conn.cursor()
 
@@ -90,12 +92,13 @@ def drop_expenses(message):
          """, (message.chat.id,))
     average_amount = cursor.fetchone()
 
-    text = (f'Ну что, все живы здоровы? Надеюсь вы хорошо провели время)\n\nПо итогу гульнули на {round(total_amount[0])}₽, это по {round(average_amount[0])}₽ с носа.\n\n'
-            f'Итого по расходам:\n\n')
+    text = (
+        f'Ну что, все живы здоровы? Надеюсь вы хорошо провели время)\n\nПо итогу гульнули на {round(total_amount[0])}₽, это по {round(average_amount[0])}₽ с носа.\n\n'
+        f'Итого по расходам:\n\n')
 
     cursor.execute("""
         SELECT amount, username, description FROM expenses WHERE chat_id = @chat_id AND amount > 0
-                        """, (message.chat.id, ))
+                        """, (message.chat.id,))
     results = cursor.fetchall()
 
     i = 1
@@ -107,7 +110,7 @@ def drop_expenses(message):
 
     cursor.execute("""
         DELETE FROM expenses WHERE chat_id = @chat_id
-    """, (message.chat.id, ))
+    """, (message.chat.id,))
     conn.commit()
     conn.close()
     bot.send_message(message.chat.id, text)
@@ -130,7 +133,7 @@ def participate(message):
          SELECT
              AVG(amount) as average_amount
          FROM expenses
-         WHERE chat_id = @chat_id
+         WHERE chat_id = @chat_id  AND amount > 0
          """, (message.chat.id,))
     average_amount = cursor.fetchone()
 
@@ -139,7 +142,7 @@ def participate(message):
 
     cursor.execute("""
         SELECT amount, username, description FROM expenses WHERE chat_id = @chat_id AND amount > 0
-                        """, (message.chat.id, ))
+                        """, (message.chat.id,))
     results = cursor.fetchall()
 
     i = 1
@@ -151,6 +154,7 @@ def participate(message):
 
     conn.close()
 
+
 @bot.message_handler(commands=['help'])
 def help(message):
     bot.send_message(message.chat.id, faq_text, parse_mode='MarkdownV2')
@@ -161,7 +165,7 @@ def help(message):
 def add_expense(message):
     user_id = message.from_user.id
     user_states[user_id] = 'waiting_for_amount'
-    bot.reply_to(message, "Пожалуйста, введите сумму расхода:")
+    bot.reply_to(message, "Пожалуйста, введите сумму расхода (ответом на это сообщение):")
 
 
 # Команда /summary
@@ -242,7 +246,8 @@ def summary(message):
     if results:
         summary_text = "Так кто, кому и сколько должен?\n\n"
 
-        keyfunc = lambda x: x[0]
+        def keyfunc(x):
+            return x[0]
 
         results_sorted = sorted(results, key=keyfunc)
 
@@ -294,11 +299,14 @@ def handle_message(message):
         if state == 'waiting_for_amount':
             try:
                 amount = float(message.text)
+                if amount <= 0:
+                    bot.reply_to(message, "️😡 Леее куда минус ставишь, наебать захотел?")
+                    raise ValueError
                 user_states[user_id] = 'waiting_for_description'
                 user_states[f'{user_id}_amount'] = amount  # Сохраняем сумму
-                bot.reply_to(message, "Теперь введите описание расхода:")
+                bot.reply_to(message, "📝 Теперь введите описание расхода (ответом на это сообщение):")
             except ValueError:
-                bot.reply_to(message, "Пожалуйста, введите корректную сумму.")
+                bot.reply_to(message, "⚠️ Пожалуйста, введите корректную сумму (ответом на это сообщение).")
 
         elif state == 'waiting_for_description':
             description = message.text
