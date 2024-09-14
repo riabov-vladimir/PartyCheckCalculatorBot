@@ -86,7 +86,7 @@ def drop_expenses(message):
          SELECT
              AVG(amount) as average_amount
          FROM expenses
-         WHERE chat_id = @chat_id
+         WHERE chat_id = @chat_id AND amount > 0
          """, (message.chat.id,))
     average_amount = cursor.fetchone()
 
@@ -270,7 +270,7 @@ def summary(message):
             SELECT
                 AVG(amount) as average_amount
             FROM expenses
-            WHERE chat_id = @chat_id
+            WHERE chat_id = @chat_id AND amount > 0
             """, (chat_id,))
         average_amount = cursor.fetchone()
 
@@ -308,13 +308,13 @@ def handle_message(message):
             # Сохранение расхода в базе данных
             conn = sqlite3.connect('expenses.db')
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO expenses (chat_id, user_id, amount, description) VALUES (?, ?, ?, ?, ?)",
-                           (message.chat.id, user_id, message.chat.username, amount, description))
+            cursor.execute("INSERT INTO expenses "
+                           "(chat_id, user_id, username, amount, description) VALUES (?, ?, ?, ?, ?)",
+                           (message.chat.id, user_id, message.from_user.username, amount, description))
             conn.commit()
             conn.close()
 
             bot.reply_to(message, f"Расход {amount} добавлен: {description}")
-            #TODO: Выводить имя пользователя
 
 
 # Основной код бота
